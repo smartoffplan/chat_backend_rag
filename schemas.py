@@ -1,33 +1,43 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional
-from datetime import datetime
-from models import PyObjectId
+from pydantic import BaseModel
+from typing import Optional
 
-class ChatSessionResponse(BaseModel):
-    id: Optional[PyObjectId] = Field(alias="_id", default=None)
-    title: str = "New Chat"
-    createdAt: Optional[datetime] = None
-    updatedAt: Optional[datetime] = None
 
-    class Config:
-        populate_by_name = True
-        json_encoders = {PyObjectId: str}
+# ── CHAT ────────────────────────────────────────────────────────────────────
 
-class MessageResponse(BaseModel):
-    id: Optional[PyObjectId] = Field(alias="_id", default=None)
-    sessionId: PyObjectId
-    role: str
-    content: str
-    createdAt: Optional[datetime] = None
-    updatedAt: Optional[datetime] = None
-
-    class Config:
-        populate_by_name = True
-        json_encoders = {PyObjectId: str}
-
-class SendMessageRequest(BaseModel):
-    sessionId: str
+class ChatRequest(BaseModel):
+    session_id: str
     message: str
+    doc_ids: Optional[list[str]] = []   # empty = search ALL uploaded docs
 
-class SendMessageResponse(BaseModel):
-    reply: str
+
+class SourceCitation(BaseModel):
+    reference_id: int
+    source: str
+    page: Optional[str] = None
+    doc_id: str
+    text_excerpt: str
+    score: float
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    sources: list[SourceCitation]
+    session_id: str
+    rewritten_query: Optional[str] = None
+
+
+# ── DOCUMENTS ────────────────────────────────────────────────────────────────
+
+class DocumentUploadResponse(BaseModel):
+    doc_id: str
+    filename: str
+    chunk_count: int
+    status: str
+
+
+class DocumentListItem(BaseModel):
+    doc_id: str
+    filename: str
+    file_type: str
+    chunk_count: int
+    upload_date: str
