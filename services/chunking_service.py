@@ -1,7 +1,6 @@
 import os
 import pypdf
 import docx                           # python-docx
-import pandas as pd
 import email
 from pathlib import Path
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -75,6 +74,7 @@ class ChunkingService:
 
     # ── CSV ───────────────────────────────────────────────────────────────────
     def _process_csv(self, file_path: str, filename: str) -> list[dict]:
+        import pandas as pd
         df = pd.read_csv(file_path)
         chunks = []
 

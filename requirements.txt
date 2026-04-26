@@ -8,7 +8,7 @@ python-multipart==0.0.9
 pydantic>=2.7.4
 
 # RAG stack
-chromadb==0.5.3
+chromadb>=1.5.0
 sentence-transformers==2.7.0
 pdfplumber==0.11.4
 python-docx==1.1.2

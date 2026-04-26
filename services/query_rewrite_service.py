@@ -6,7 +6,7 @@ load_dotenv()
 
 # ── CONFIG ────────────────────────────────────────────────────────────────
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-MODEL = os.getenv("GROQ_MODEL", "gemini-2.5-flash")
+MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 client = Groq(api_key=GROQ_API_KEY)
 

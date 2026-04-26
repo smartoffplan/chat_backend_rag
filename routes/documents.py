@@ -28,6 +28,7 @@ embedder = EmbeddingService()
 @router.post("/upload")
 async def upload_document(
     file: UploadFile = File(...),
+    chat_id: str = "",
     db=Depends(get_db),
 ):
     # Validate file extension
@@ -60,11 +61,12 @@ async def upload_document(
             raise ValueError("No text could be extracted from this file.")
 
         # ── Embed + store in ChromaDB ───────────────────────────────────────
-        embedder.embed_chunks(chunks)
+        embedder.embed_chunks(chunks, chat_id=chat_id)
 
         # ── Save metadata to MongoDB ────────────────────────────────────────
         doc_record = {
             "_id":             doc_id,
+            "chat_id":         chat_id,
             "filename":        filename,
             "file_type":       ext.lstrip("."),
             "file_size_bytes": len(content),
@@ -90,11 +92,13 @@ async def upload_document(
 
 # ── LIST ──────────────────────────────────────────────────────────────────────
 @router.get("/list")
-async def list_documents(db=Depends(get_db)):
-    docs = await db["documents"].find({}).to_list(200)
+async def list_documents(chat_id: str = "", db=Depends(get_db)):
+    query = {"chat_id": chat_id} if chat_id else {}
+    docs = await db["documents"].find(query).to_list(200)
     return [
         {
             "doc_id":      d["_id"],
+            "chat_id":     d.get("chat_id", ""),
             "filename":    d["filename"],
             "file_type":   d["file_type"],
             "chunk_count": d["chunk_count"],
@@ -106,8 +110,11 @@ async def list_documents(db=Depends(get_db)):
 
 # ── DELETE ────────────────────────────────────────────────────────────────────
 @router.delete("/{doc_id}")
-async def delete_document(doc_id: str, db=Depends(get_db)):
-    doc = await db["documents"].find_one({"_id": doc_id})
+async def delete_document(doc_id: str, chat_id: str = "", db=Depends(get_db)):
+    query = {"_id": doc_id}
+    if chat_id:
+        query["chat_id"] = chat_id
+    doc = await db["documents"].find_one(query)
     if not doc:
         raise HTTPException(404, "Document not found.")
 
@@ -115,7 +122,7 @@ async def delete_document(doc_id: str, db=Depends(get_db)):
     embedder.delete_document(doc_id)
 
     # Remove from MongoDB
-    await db["documents"].delete_one({"_id": doc_id})
+    await db["documents"].delete_one(query)
 
     # Remove file from disk
     for ext in ALLOWED_EXTENSIONS:
@@ -129,10 +136,13 @@ async def delete_document(doc_id: str, db=Depends(get_db)):
 
 # ── STATS (optional, useful for debugging) ────────────────────────────────────
 @router.get("/stats")
-async def stats(db=Depends(get_db)):
-    doc_count   = await db["documents"].count_documents({})
+async def stats(chat_id: str = "", db=Depends(get_db)):
+    query = {"chat_id": chat_id} if chat_id else {}
+    doc_count   = await db["documents"].count_documents(query)
     chunk_count = embedder.collection_count()
     return {
+        "total_documents":     doc_count,
+        "total_chunks":        chunk_count,
         "documents_in_mongo":  doc_count,
         "chunks_in_chromadb":  chunk_count,
         "upload_dir":          UPLOAD_DIR,

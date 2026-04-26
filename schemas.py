@@ -4,6 +4,10 @@ from typing import Optional
 
 # ── CHAT ────────────────────────────────────────────────────────────────────
 
+class CreateSessionRequest(BaseModel):
+    title: Optional[str] = "New Chat"
+    doc_ids: Optional[list[str]] = []
+
 class ChatRequest(BaseModel):
     session_id: str
     message: str

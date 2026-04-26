@@ -37,7 +37,7 @@ class EmbeddingService:
         return cls._instance
 
     # ── STORE ────────────────────────────────────────────────────────────────
-    def embed_chunks(self, chunks: list[dict]) -> None:
+    def embed_chunks(self, chunks: list[dict], chat_id: str | None = None) -> None:
         """Encode chunks and upsert into ChromaDB."""
         if not chunks:
             return
@@ -54,6 +54,7 @@ class EmbeddingService:
                 "page":        str(c.get("page") or ""),
                 "chunk_index": str(c.get("chunk_index", 0)),
                 "file_type":   c.get("file_type", ""),
+                "chat_id":     chat_id or "",
             }
             for c in chunks
         ]
@@ -70,19 +71,29 @@ class EmbeddingService:
     def query(
         self,
         query_text: str,
+        chat_id: str | None = None,
         doc_ids: list[str] | None = None,
         top_k: int = 5,
     ) -> list[dict]:
         """
         Semantic search. Returns list of:
         { text, source, page, doc_id, chunk_index, score }
+        Filters by chat_id (mandatory isolation) and optionally by doc_ids.
         """
         query_embedding = self.model.encode([query_text]).tolist()[0]
 
-        where_filter = None
+        conditions = []
+        if chat_id:
+            conditions.append({"chat_id": chat_id})
         if doc_ids:
-            # Filter to only the documents the user selected
-            where_filter = {"doc_id": {"$in": doc_ids}}
+            conditions.append({"doc_id": {"$in": doc_ids}})
+
+        if len(conditions) == 1:
+            where_filter = conditions[0]
+        elif len(conditions) > 1:
+            where_filter = {"$and": conditions}
+        else:
+            where_filter = None
 
         results = self.collection.query(
             query_embeddings=[query_embedding],

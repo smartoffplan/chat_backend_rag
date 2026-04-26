@@ -18,6 +18,7 @@ class RAGService:
         self,
         query: str,
         chat_history: list[dict],
+        chat_id: str | None = None,
         doc_ids: list[str] | None = None,
         top_k: int = 5,
     ) -> dict:
@@ -43,6 +44,7 @@ class RAGService:
         # ── Step 2: Retrieve relevant chunks ────────────────────────────────
         chunks = self.embedder.query(
             rewritten_query,
+            chat_id=chat_id,
             doc_ids=doc_ids if doc_ids else None,
             top_k=top_k,
         )
