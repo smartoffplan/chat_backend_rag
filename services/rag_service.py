@@ -20,6 +20,8 @@ class RAGService:
         chat_history: list[dict],
         chat_id: str | None = None,
         doc_ids: list[str] | None = None,
+        user_id: str | None = None,
+        persona: dict | None = None,
         top_k: int = 5,
     ) -> dict:
         """
@@ -46,12 +48,13 @@ class RAGService:
             rewritten_query,
             chat_id=chat_id,
             doc_ids=doc_ids if doc_ids else None,
+            user_id=user_id,
             top_k=top_k,
         )
 
         # ── Step 3: No chunks found → plain LLM answer ──────────────────────
         if not chunks:
-            answer = await self._call_llm(query, chat_history, context="")
+            answer = await self._call_llm(query, chat_history, context="", persona=persona)
             return {
                 "answer": answer,
                 "sources": [],
@@ -68,7 +71,7 @@ class RAGService:
         context = "\n\n---\n\n".join(context_parts)
 
         # ── Step 5: Generate answer ──────────────────────────────────────────
-        answer = await self._call_llm(query, chat_history, context)
+        answer = await self._call_llm(query, chat_history, context, persona=persona)
 
         # ── Step 6: Build citation objects ───────────────────────────────────
         sources = []
@@ -94,13 +97,16 @@ class RAGService:
         }
 
     # ── LLM CALL ─────────────────────────────────────────────────────────────
-    async def _call_llm(self, query, chat_history, context):
+    async def _call_llm(self, query, chat_history, context, persona=None):
 
-        system_prompt = (
-            "You are a helpful assistant. "
-            "Use provided document context when available. "
-            "Cite sources like [SOURCE 1]."
-        )
+        if persona:
+            system_prompt = self._build_persona_prompt(persona)
+        else:
+            system_prompt = (
+                "You are a helpful assistant. "
+                "Use provided document context when available. "
+                "Cite sources like [SOURCE 1]."
+            )
 
         messages = [{"role": "system", "content": system_prompt}]
 
@@ -134,3 +140,48 @@ Question:
 
         except Exception as e:
             return f"Groq error: {str(e)}"
+
+    async def delete_chat_data(self, chat_id: str) -> None:
+        """Clean up all embeddings associated with a chat session."""
+        self.embedder.delete_by_chat_id(chat_id)
+
+    # ── PERSONA PROMPT BUILDER ───────────────────────────────────────────────
+    def _build_persona_prompt(self, persona: dict) -> str:
+        lines = [
+            "You are a personalized AI assistant.",
+            "",
+            "User Persona:",
+            f"- Persona Name: {persona.get('persona_name', 'Assistant')}",
+            f"- Profession: {persona.get('profession', 'General')}",
+            f"- Purpose: {persona.get('purpose', 'Assist the user')}",
+        ]
+        if persona.get("domain"):
+            lines.append(f"- Domain: {persona['domain']}")
+        if persona.get("knowledge_level"):
+            lines.append(f"- Knowledge Level: {persona['knowledge_level']}")
+        if persona.get("preferred_language"):
+            lines.append(f"- Preferred Language: {persona['preferred_language']}")
+        if persona.get("tone"):
+            lines.append(f"- Tone: {persona['tone']}")
+        if persona.get("answer_style"):
+            lines.append(f"- Answer Style: {persona['answer_style']}")
+        if persona.get("output_format"):
+            lines.append(f"- Output Format: {persona['output_format']}")
+        if persona.get("citation_preference"):
+            lines.append(f"- Citation Preference: {persona['citation_preference']}")
+        if persona.get("document_behavior"):
+            lines.append(f"- Document Behavior: {persona['document_behavior']}")
+        if persona.get("restrictions"):
+            lines.append(f"- Restrictions: {persona['restrictions']}")
+
+        lines.extend([
+            "",
+            "Behavior Rules:",
+            "1. Answer according to the user's persona.",
+            "2. Use the retrieved document context when available.",
+            "3. Do not invent facts that are not present in the documents.",
+            "4. If the answer is not found in the documents, clearly say so.",
+            "5. Follow the requested tone, language, and output format.",
+            "6. Cite sources like [SOURCE 1] when using document context.",
+        ])
+        return "\n".join(lines)

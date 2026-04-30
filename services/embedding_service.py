@@ -37,7 +37,7 @@ class EmbeddingService:
         return cls._instance
 
     # ── STORE ────────────────────────────────────────────────────────────────
-    def embed_chunks(self, chunks: list[dict], chat_id: str | None = None) -> None:
+    def embed_chunks(self, chunks: list[dict], chat_id: str | None = None, user_id: str | None = None) -> None:
         """Encode chunks and upsert into ChromaDB."""
         if not chunks:
             return
@@ -54,7 +54,8 @@ class EmbeddingService:
                 "page":        str(c.get("page") or ""),
                 "chunk_index": str(c.get("chunk_index", 0)),
                 "file_type":   c.get("file_type", ""),
-                "chat_id":     chat_id or "",
+                "chat_id":     chat_id if chat_id else "",
+                "user_id":     user_id or "",
             }
             for c in chunks
         ]
@@ -73,6 +74,7 @@ class EmbeddingService:
         query_text: str,
         chat_id: str | None = None,
         doc_ids: list[str] | None = None,
+        user_id: str | None = None,
         top_k: int = 5,
     ) -> list[dict]:
         """
@@ -87,6 +89,8 @@ class EmbeddingService:
             conditions.append({"chat_id": chat_id})
         if doc_ids:
             conditions.append({"doc_id": {"$in": doc_ids}})
+        if user_id:
+            conditions.append({"user_id": user_id})
 
         if len(conditions) == 1:
             where_filter = conditions[0]
@@ -123,10 +127,13 @@ class EmbeddingService:
     # ── DELETE ───────────────────────────────────────────────────────────────
     def delete_document(self, doc_id: str) -> None:
         """Remove ALL chunks for a given doc_id from ChromaDB."""
-        existing = self.collection.get(where={"doc_id": doc_id})
-        if existing["ids"]:
-            self.collection.delete(ids=existing["ids"])
-            print(f"[EmbeddingService] Deleted {len(existing['ids'])} chunks for doc {doc_id}")
+        self.collection.delete(where={"doc_id": doc_id})
+        print(f"[EmbeddingService] Deleted chunks for doc {doc_id}")
+
+    def delete_by_chat_id(self, chat_id: str) -> None:
+        """Remove ALL chunks for a given chat_id from ChromaDB."""
+        self.collection.delete(where={"chat_id": chat_id})
+        print(f"[EmbeddingService] Deleted chunks for chat {chat_id}")
 
     # ── STATS ────────────────────────────────────────────────────────────────
     def collection_count(self) -> int:

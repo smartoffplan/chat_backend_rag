@@ -10,6 +10,7 @@ load_dotenv()
 from database import get_db
 from services.chunking_service import ChunkingService
 from services.embedding_service import EmbeddingService
+from auth import get_current_user
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -30,6 +31,7 @@ async def upload_document(
     file: UploadFile = File(...),
     chat_id: str = "",
     db=Depends(get_db),
+    user=Depends(get_current_user),
 ):
     # Validate file extension
     filename = file.filename or ""
@@ -61,11 +63,12 @@ async def upload_document(
             raise ValueError("No text could be extracted from this file.")
 
         # ── Embed + store in ChromaDB ───────────────────────────────────────
-        embedder.embed_chunks(chunks, chat_id=chat_id)
+        embedder.embed_chunks(chunks, chat_id=chat_id, user_id=user["user_id"])
 
         # ── Save metadata to MongoDB ────────────────────────────────────────
         doc_record = {
             "_id":             doc_id,
+            "user_id":         user["user_id"],
             "chat_id":         chat_id,
             "filename":        filename,
             "file_type":       ext.lstrip("."),
@@ -92,8 +95,10 @@ async def upload_document(
 
 # ── LIST ──────────────────────────────────────────────────────────────────────
 @router.get("/list")
-async def list_documents(chat_id: str = "", db=Depends(get_db)):
-    query = {"chat_id": chat_id} if chat_id else {}
+async def list_documents(chat_id: str = "", db=Depends(get_db), user=Depends(get_current_user)):
+    query = {"user_id": user["user_id"]}
+    if chat_id:
+        query["chat_id"] = chat_id
     docs = await db["documents"].find(query).to_list(200)
     return [
         {
@@ -110,8 +115,8 @@ async def list_documents(chat_id: str = "", db=Depends(get_db)):
 
 # ── DELETE ────────────────────────────────────────────────────────────────────
 @router.delete("/{doc_id}")
-async def delete_document(doc_id: str, chat_id: str = "", db=Depends(get_db)):
-    query = {"_id": doc_id}
+async def delete_document(doc_id: str, chat_id: str = "", db=Depends(get_db), user=Depends(get_current_user)):
+    query = {"_id": doc_id, "user_id": user["user_id"]}
     if chat_id:
         query["chat_id"] = chat_id
     doc = await db["documents"].find_one(query)
@@ -136,8 +141,10 @@ async def delete_document(doc_id: str, chat_id: str = "", db=Depends(get_db)):
 
 # ── STATS (optional, useful for debugging) ────────────────────────────────────
 @router.get("/stats")
-async def stats(chat_id: str = "", db=Depends(get_db)):
-    query = {"chat_id": chat_id} if chat_id else {}
+async def stats(chat_id: str = "", db=Depends(get_db), user=Depends(get_current_user)):
+    query = {"user_id": user["user_id"]}
+    if chat_id:
+        query["chat_id"] = chat_id
     doc_count   = await db["documents"].count_documents(query)
     chunk_count = embedder.collection_count()
     return {
