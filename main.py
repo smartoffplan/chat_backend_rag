@@ -14,18 +14,23 @@ from routes import chat, documents, auth, personas
 _ready = False
 
 
+_startup_error: str = ""
+
+
 def _warm_services():
     """Runs in a daemon thread — loads model without blocking uvicorn startup."""
-    global _ready
+    global _ready, _startup_error
     try:
         from services.embedding_service import EmbeddingService
         EmbeddingService()._ensure_ready()
-        _ready = True
         print("[Startup] All services ready.")
     except Exception as exc:
-        # Log the error but don't crash — the container stays up and
-        # /health returns 503 so Cloud Run retries without killing the revision.
+        _startup_error = str(exc)
         print(f"[Startup] WARNING: service warm-up failed: {exc}")
+    finally:
+        # Always mark ready so /health returns 200 and Cloud Run keeps the
+        # revision alive. Model-dependent endpoints handle missing state gracefully.
+        _ready = True
 
 
 @asynccontextmanager
@@ -63,6 +68,15 @@ async def root():
 
 @app.get("/health")
 async def health():
+    # Always 200 — tells Cloud Run the container is alive.
+    return {"status": "ok"}
+
+
+@app.get("/ready")
+async def ready():
+    # Detailed readiness: use this to check if the AI model finished loading.
     if not _ready:
         return JSONResponse(status_code=503, content={"status": "starting"})
-    return {"status": "ok"}
+    if _startup_error:
+        return JSONResponse(status_code=500, content={"status": "error", "detail": _startup_error})
+    return {"status": "ready"}

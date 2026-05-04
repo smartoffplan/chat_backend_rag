@@ -1,12 +1,10 @@
 # Cloud Run service definition
-# Deploy with:  gcloud run services replace cloud-run-service.yaml --region=REGION
+# Project:  testing-494517
+# Region:   northamerica-northeast1
+# Service:  chat-backend-rag
+# URL:      https://chat-backend-rag-501313895560.northamerica-northeast1.run.app
 #
-# Before first deploy, run setup commands in cloudbuild.yaml comments.
-# Placeholders to replace:
-#   PROJECT_ID   → your GCP project ID
-#   REGION       → e.g. us-central1
-#   IMAGE_URL    → set automatically by cloudbuild.yaml
-#   BUCKET_NAME  → set automatically by cloudbuild.yaml
+# IMAGE_URL and BUCKET_NAME are substituted by cloudbuild.yaml at deploy time.
 
 apiVersion: serving.knative.dev/v1
 kind: Service

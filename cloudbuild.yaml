@@ -6,7 +6,7 @@
 # ════════════════════════════════════════════════════════════════════════════
 #
 # 1. Set your project:
-#      gcloud config set project YOUR_PROJECT_ID
+#      gcloud config set project testing-494517
 #
 # 2. Enable required APIs:
 #      gcloud services enable \
@@ -26,11 +26,11 @@
 #      echo -n "YOUR_JWT_SECRET"   | gcloud secrets create JWT_SECRET_KEY --data-file=-
 #
 # 5. Grant Cloud Build SA the required roles:
-#      PROJECT_NUMBER=$(gcloud projects describe YOUR_PROJECT_ID --format='value(projectNumber)')
+#      PROJECT_NUMBER=$(gcloud projects describe testing-494517 --format='value(projectNumber)')
 #      CB_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
 #      for ROLE in roles/run.admin roles/iam.serviceAccountUser \
 #                  roles/secretmanager.secretAccessor roles/artifactregistry.writer; do
-#        gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+#        gcloud projects add-iam-policy-binding testing-494517 \
 #          --member="serviceAccount:${CB_SA}" --role="$ROLE"
 #      done
 #
