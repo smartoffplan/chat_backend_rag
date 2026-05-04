@@ -12,33 +12,40 @@ COLLECTION_NAME = "rag_documents"
 
 class EmbeddingService:
     """
-    Singleton — model and ChromaDB client load ONCE at startup.
-    Model: all-MiniLM-L6-v2  (~90MB, free, runs on CPU, no API key needed)
+    Singleton with lazy initialization.
+    Model and ChromaDB load ONCE — but only on first use (or explicit warm-up),
+    NOT at import time. This lets uvicorn open port 8080 immediately so
+    Cloud Run's startup probe passes before the heavy model download completes.
     """
     _instance = None
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-
-            print("[EmbeddingService] Loading sentence-transformer model...")
-            cls._instance.model = SentenceTransformer("all-MiniLM-L6-v2")
-
-            print(f"[EmbeddingService] Connecting to ChromaDB at: {CHROMA_PATH}")
-            cls._instance.chroma_client = chromadb.PersistentClient(
-                path=CHROMA_PATH,
-                settings=Settings(anonymized_telemetry=False),
-            )
-            cls._instance.collection = cls._instance.chroma_client.get_or_create_collection(
-                name=COLLECTION_NAME,
-                metadata={"hnsw:space": "cosine"},
-            )
-            print("[EmbeddingService] Ready.")
+            cls._instance._ready = False
         return cls._instance
+
+    def _ensure_ready(self):
+        if self._ready:
+            return
+        print("[EmbeddingService] Loading sentence-transformer model...")
+        self.model = SentenceTransformer("all-MiniLM-L6-v2")
+
+        print(f"[EmbeddingService] Connecting to ChromaDB at: {CHROMA_PATH}")
+        self.chroma_client = chromadb.PersistentClient(
+            path=CHROMA_PATH,
+            settings=Settings(anonymized_telemetry=False),
+        )
+        self.collection = self.chroma_client.get_or_create_collection(
+            name=COLLECTION_NAME,
+            metadata={"hnsw:space": "cosine"},
+        )
+        self._ready = True
+        print("[EmbeddingService] Ready.")
 
     # ── STORE ────────────────────────────────────────────────────────────────
     def embed_chunks(self, chunks: list[dict], chat_id: str | None = None, user_id: str | None = None) -> None:
-        """Encode chunks and upsert into ChromaDB."""
+        self._ensure_ready()
         if not chunks:
             return
 
@@ -77,11 +84,7 @@ class EmbeddingService:
         user_id: str | None = None,
         top_k: int = 5,
     ) -> list[dict]:
-        """
-        Semantic search. Returns list of:
-        { text, source, page, doc_id, chunk_index, score }
-        Filters by chat_id (mandatory isolation) and optionally by doc_ids.
-        """
+        self._ensure_ready()
         query_embedding = self.model.encode([query_text]).tolist()[0]
 
         conditions = []
@@ -119,22 +122,23 @@ class EmbeddingService:
                     "page":        meta.get("page", ""),
                     "doc_id":      meta.get("doc_id", ""),
                     "chunk_index": meta.get("chunk_index", ""),
-                    "score":       round(1 - dist, 4),   # cosine distance → similarity
+                    "score":       round(1 - dist, 4),
                 })
 
         return output
 
     # ── DELETE ───────────────────────────────────────────────────────────────
     def delete_document(self, doc_id: str) -> None:
-        """Remove ALL chunks for a given doc_id from ChromaDB."""
+        self._ensure_ready()
         self.collection.delete(where={"doc_id": doc_id})
         print(f"[EmbeddingService] Deleted chunks for doc {doc_id}")
 
     def delete_by_chat_id(self, chat_id: str) -> None:
-        """Remove ALL chunks for a given chat_id from ChromaDB."""
+        self._ensure_ready()
         self.collection.delete(where={"chat_id": chat_id})
         print(f"[EmbeddingService] Deleted chunks for chat {chat_id}")
 
     # ── STATS ────────────────────────────────────────────────────────────────
     def collection_count(self) -> int:
+        self._ensure_ready()
         return self.collection.count()
