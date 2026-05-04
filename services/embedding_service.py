@@ -32,7 +32,7 @@ class EmbeddingService:
         from chromadb.config import Settings
 
         print("[EmbeddingService] Loading sentence-transformer model...")
-        self.model = SentenceTransformer("all-MiniLM-L6-v2")
+        self.model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
         print("[EmbeddingService] Model loaded.")
 
         try:
