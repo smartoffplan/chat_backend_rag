@@ -29,6 +29,7 @@ def _serialize(doc):
         "citation_preference": doc.get("citation_preference"),
         "document_behavior": doc.get("document_behavior"),
         "restrictions": doc.get("restrictions"),
+        "color": doc.get("color", "#F97316"),
         "is_default": doc.get("is_default", False),
         "created_at": doc.get("created_at"),
     }
@@ -63,6 +64,7 @@ async def create_persona(
         "citation_preference": request.citation_preference,
         "document_behavior": request.document_behavior,
         "restrictions": request.restrictions,
+        "color": request.color or "#F97316",
         "is_default": is_default,
         "created_at": now,
         "updated_at": now,

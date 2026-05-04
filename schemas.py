@@ -34,6 +34,8 @@ class ChatRequest(BaseModel):
     message: str
     doc_ids: Optional[list[str]] = []   # empty = search ALL uploaded docs
     persona_id: Optional[str] = None
+    persona_name: Optional[str] = None
+    persona_color: Optional[str] = None
 
 
 class SourceCitation(BaseModel):
@@ -84,6 +86,7 @@ class PersonaCreateRequest(BaseModel):
     citation_preference: Optional[str] = "Cite relevant document sections"
     document_behavior: Optional[str] = "Use uploaded documents first"
     restrictions: Optional[str] = None
+    color: Optional[str] = "#F97316"
 
 
 class PersonaUpdateRequest(BaseModel):
@@ -99,6 +102,7 @@ class PersonaUpdateRequest(BaseModel):
     citation_preference: Optional[str] = None
     document_behavior: Optional[str] = None
     restrictions: Optional[str] = None
+    color: Optional[str] = None
 
 
 class PersonaResponse(BaseModel):
@@ -116,5 +120,6 @@ class PersonaResponse(BaseModel):
     citation_preference: Optional[str] = None
     document_behavior: Optional[str] = None
     restrictions: Optional[str] = None
+    color: Optional[str] = "#F97316"
     is_default: bool = False
     created_at: Optional[str] = None

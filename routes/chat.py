@@ -34,6 +34,14 @@ async def create_session(
     doc_ids = request.doc_ids if request and request.doc_ids else []
     title = request.title if request and request.title else "New Chat"
     persona_id = request.persona_id if request and request.persona_id else None
+    persona_name = None
+    persona_color = None
+
+    if persona_id:
+        persona_doc = await db["personas"].find_one({"_id": persona_id, "user_id": user["user_id"]})
+        if persona_doc:
+            persona_name = persona_doc.get("persona_name")
+            persona_color = persona_doc.get("color")
 
     session_doc = {
         "session_id": session_id,
@@ -42,6 +50,8 @@ async def create_session(
         "messages": [],
         "doc_ids": doc_ids,
         "persona_id": persona_id,
+        "persona_name": persona_name,
+        "persona_color": persona_color,
         "created_at": now,
         "updated_at": now,
     }
@@ -90,6 +100,10 @@ async def send_message(
         persona=persona,
     )
 
+    # Determine persona metadata for this message
+    p_name = request.persona_name or (persona.get("persona_name") if persona else None)
+    p_color = request.persona_color or (persona.get("color") if persona else None)
+
     now = datetime.now(timezone.utc).isoformat()
 
     user_msg = {
@@ -104,6 +118,8 @@ async def send_message(
         "sources":         result["sources"],
         "rewritten_query": result.get("rewritten_query"),
         "timestamp":       now,
+        "persona_name":    p_name,
+        "persona_color":   p_color,
     }
 
     # Update title from first user message if still default
@@ -151,6 +167,8 @@ async def get_history(session_id: str, db=Depends(get_db), user=Depends(get_curr
         "messages":   session.get("messages", []),
         "doc_ids": session.get("doc_ids", []),
         "persona_id": session.get("persona_id"),
+        "persona_name": session.get("persona_name"),
+        "persona_color": session.get("persona_color"),
     }
 
 
@@ -158,7 +176,8 @@ async def get_history(session_id: str, db=Depends(get_db), user=Depends(get_curr
 @router.get("/sessions")
 async def list_sessions(db=Depends(get_db), user=Depends(get_current_user)):
     sessions = await db["chats"].find(
-        {"user_id": user["user_id"]}, {"session_id": 1, "title": 1, "created_at": 1, "_id": 0}
+        {"user_id": user["user_id"]}, 
+        {"session_id": 1, "title": 1, "created_at": 1, "persona_name": 1, "persona_color": 1, "_id": 0}
     ).sort("updated_at", -1).to_list(100)
     return sessions
 
@@ -189,14 +208,35 @@ async def update_session_persona(
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
-    """Update the persona linked to a chat session."""
+    # Load persona details
+    persona_name = None
+    persona_color = None
+    if request.persona_id:
+        persona_doc = await db["personas"].find_one({"_id": request.persona_id, "user_id": user["user_id"]})
+        if persona_doc:
+            persona_name = persona_doc.get("persona_name")
+            persona_color = persona_doc.get("color")
+
     result = await db["chats"].update_one(
         {"session_id": session_id, "user_id": user["user_id"]},
-        {"$set": {"persona_id": request.persona_id, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        {
+            "$set": {
+                "persona_id": request.persona_id, 
+                "persona_name": persona_name,
+                "persona_color": persona_color,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+        },
     )
     if result.matched_count == 0:
         raise HTTPException(404, "Session not found.")
-    return {"status": "updated", "session_id": session_id, "persona_id": request.persona_id}
+    return {
+        "status": "updated", 
+        "session_id": session_id, 
+        "persona_id": request.persona_id,
+        "persona_name": persona_name,
+        "persona_color": persona_color
+    }
 
 
 # ── DELETE SESSION ────────────────────────────────────────────────────────────
