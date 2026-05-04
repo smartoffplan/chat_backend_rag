@@ -1,13 +1,12 @@
 import os
-import pypdf
-import docx                           # python-docx
 import email
 from pathlib import Path
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
 class ChunkingService:
     def __init__(self):
+        # Deferred — langchain_core takes ~6s to import; delay until first use
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
         self.splitter = RecursiveCharacterTextSplitter(
             chunk_size=500,
             chunk_overlap=80,
@@ -16,12 +15,6 @@ class ChunkingService:
 
     # ── PUBLIC ───────────────────────────────────────────────────────────────
     def process_file(self, file_path: str, filename: str, doc_id: str) -> list[dict]:
-        """
-        Master method. Returns list of chunk dicts:
-        {
-            text, source, page, doc_id, chunk_index, file_type
-        }
-        """
         ext = Path(filename).suffix.lower()
 
         if ext == ".pdf":
@@ -35,7 +28,6 @@ class ChunkingService:
         else:
             raise ValueError(f"Unsupported file type: {ext}")
 
-        # Attach shared metadata
         for i, chunk in enumerate(raw):
             chunk["doc_id"] = doc_id
             chunk["chunk_index"] = i
@@ -45,6 +37,7 @@ class ChunkingService:
 
     # ── PDF ──────────────────────────────────────────────────────────────────
     def _process_pdf(self, file_path: str, filename: str) -> list[dict]:
+        import pypdf
         chunks = []
         with open(file_path, "rb") as f:
             reader = pypdf.PdfReader(f)
@@ -55,15 +48,12 @@ class ChunkingService:
                 for chunk_text in self.splitter.split_text(text):
                     chunk_text = chunk_text.strip()
                     if len(chunk_text) > 30:
-                        chunks.append({
-                            "text": chunk_text,
-                            "source": filename,
-                            "page": str(i),       # "3" → "from page 3 of PDF"
-                        })
+                        chunks.append({"text": chunk_text, "source": filename, "page": str(i)})
         return chunks
 
     # ── DOCX ─────────────────────────────────────────────────────────────────
     def _process_docx(self, file_path: str, filename: str) -> list[dict]:
+        import docx
         doc = docx.Document(file_path)
         full_text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
         return [
@@ -77,17 +67,12 @@ class ChunkingService:
         import pandas as pd
         df = pd.read_csv(file_path)
         chunks = []
-
-        # Column description chunk — always first
         header = f"File: {filename}. Columns: {', '.join(df.columns.tolist())}. Total rows: {len(df)}."
         chunks.append({"text": header, "source": filename, "page": None})
-
-        # Batch rows — 10 rows per chunk
         for i in range(0, len(df), 10):
             batch = df.iloc[i:i + 10]
             text = f"Rows {i + 1} to {i + len(batch)}:\n{batch.to_string(index=False)}"
             chunks.append({"text": text, "source": filename, "page": None})
-
         return chunks
 
     # ── EMAIL ─────────────────────────────────────────────────────────────────

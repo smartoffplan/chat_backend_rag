@@ -1,8 +1,5 @@
 import os
 from dotenv import load_dotenv
-from sentence_transformers import SentenceTransformer
-import chromadb
-from chromadb.config import Settings
 
 load_dotenv()
 
@@ -12,10 +9,10 @@ COLLECTION_NAME = "rag_documents"
 
 class EmbeddingService:
     """
-    Singleton with lazy initialization.
-    Model and ChromaDB load ONCE — but only on first use (or explicit warm-up),
-    NOT at import time. This lets uvicorn open port 8080 immediately so
-    Cloud Run's startup probe passes before the heavy model download completes.
+    Singleton with fully deferred initialization.
+    Heavy imports (torch, sentence_transformers, chromadb) happen ONLY inside
+    _ensure_ready(), never at module import time.  This keeps the Python startup
+    phase fast and memory-light so Cloud Run's TCP probe passes immediately.
     """
     _instance = None
 
@@ -28,6 +25,12 @@ class EmbeddingService:
     def _ensure_ready(self):
         if self._ready:
             return
+
+        # Heavy imports deferred to here — not at module level
+        from sentence_transformers import SentenceTransformer
+        import chromadb
+        from chromadb.config import Settings
+
         print("[EmbeddingService] Loading sentence-transformer model...")
         self.model = SentenceTransformer("all-MiniLM-L6-v2")
 
@@ -51,9 +54,7 @@ class EmbeddingService:
 
         texts = [c["text"] for c in chunks]
         embeddings = self.model.encode(texts, show_progress_bar=False).tolist()
-
         ids = [f"{c['doc_id']}_chunk_{c['chunk_index']}" for c in chunks]
-
         metadatas = [
             {
                 "source":      c.get("source", ""),
@@ -66,12 +67,8 @@ class EmbeddingService:
             }
             for c in chunks
         ]
-
         self.collection.upsert(
-            ids=ids,
-            embeddings=embeddings,
-            documents=texts,
-            metadatas=metadatas,
+            ids=ids, embeddings=embeddings, documents=texts, metadatas=metadatas,
         )
         print(f"[EmbeddingService] Stored {len(chunks)} chunks.")
 
@@ -124,7 +121,6 @@ class EmbeddingService:
                     "chunk_index": meta.get("chunk_index", ""),
                     "score":       round(1 - dist, 4),
                 })
-
         return output
 
     # ── DELETE ───────────────────────────────────────────────────────────────

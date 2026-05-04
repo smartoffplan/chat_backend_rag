@@ -18,11 +18,23 @@ UPLOAD_DIR        = os.getenv("UPLOAD_DIR", "./uploads")
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".csv", ".eml", ".msg", ".txt"}
 MAX_FILE_MB       = 20
 
-# Make sure upload folder exists
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-chunker  = ChunkingService()
-embedder = EmbeddingService()
+# Lazy singletons — instantiated on first request, not at import time
+_chunker = None
+_embedder = None
+
+def _get_chunker() -> ChunkingService:
+    global _chunker
+    if _chunker is None:
+        _chunker = ChunkingService()
+    return _chunker
+
+def _get_embedder() -> EmbeddingService:
+    global _embedder
+    if _embedder is None:
+        _embedder = EmbeddingService()
+    return _embedder
 
 
 # ── UPLOAD ────────────────────────────────────────────────────────────────────
@@ -58,12 +70,12 @@ async def upload_document(
 
     try:
         # ── Chunk ──────────────────────────────────────────────────────────
-        chunks = chunker.process_file(saved_path, filename, doc_id)
+        chunks = _get_chunker().process_file(saved_path, filename, doc_id)
         if not chunks:
             raise ValueError("No text could be extracted from this file.")
 
         # ── Embed + store in ChromaDB ───────────────────────────────────────
-        embedder.embed_chunks(chunks, chat_id=chat_id, user_id=user["user_id"])
+        _get_embedder().embed_chunks(chunks, chat_id=chat_id, user_id=user["user_id"])
 
         # ── Save metadata to MongoDB ────────────────────────────────────────
         doc_record = {
@@ -124,7 +136,7 @@ async def delete_document(doc_id: str, chat_id: str = "", db=Depends(get_db), us
         raise HTTPException(404, "Document not found.")
 
     # Remove from ChromaDB
-    embedder.delete_document(doc_id)
+    _get_embedder().delete_document(doc_id)
 
     # Remove from MongoDB
     await db["documents"].delete_one(query)
@@ -146,7 +158,7 @@ async def stats(chat_id: str = "", db=Depends(get_db), user=Depends(get_current_
     if chat_id:
         query["chat_id"] = chat_id
     doc_count   = await db["documents"].count_documents(query)
-    chunk_count = embedder.collection_count()
+    chunk_count = _get_embedder().collection_count()
     return {
         "total_documents":     doc_count,
         "total_chunks":        chunk_count,
