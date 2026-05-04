@@ -1,0 +1,133 @@
+# Google Cloud Build — CI/CD pipeline
+# Triggers on every push to main branch.
+#
+# ════════════════════════════════════════════════════════════════════════════
+# ONE-TIME SETUP  (run these in Google Cloud Shell or gcloud CLI)
+# ════════════════════════════════════════════════════════════════════════════
+#
+# 1. Set your project:
+#      gcloud config set project YOUR_PROJECT_ID
+#
+# 2. Enable required APIs:
+#      gcloud services enable \
+#        run.googleapis.com \
+#        cloudbuild.googleapis.com \
+#        artifactregistry.googleapis.com \
+#        secretmanager.googleapis.com \
+#        storage.googleapis.com
+#
+# 3. Create Artifact Registry repo:
+#      gcloud artifacts repositories create chat-backend \
+#        --repository-format=docker \
+#        --location=us-central1
+#
+# 4. Create GCS bucket for persistent data (ChromaDB + uploads):
+#      gsutil mb -l us-central1 gs://YOUR_PROJECT_ID-rag-data
+#      gsutil uniformbucketlevelaccess set on gs://YOUR_PROJECT_ID-rag-data
+#
+# 5. Store secrets in Secret Manager:
+#      echo -n "YOUR_MONGO_URI"    | gcloud secrets create MONGO_URI    --data-file=-
+#      echo -n "YOUR_GROQ_API_KEY" | gcloud secrets create GROQ_API_KEY --data-file=-
+#      echo -n "YOUR_JWT_SECRET"   | gcloud secrets create JWT_SECRET_KEY --data-file=-
+#
+# 6. Grant Cloud Build service account permissions:
+#      PROJECT_NUMBER=$(gcloud projects describe YOUR_PROJECT_ID --format='value(projectNumber)')
+#      CB_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
+#
+#      gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+#        --member="serviceAccount:${CB_SA}" --role="roles/run.admin"
+#      gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+#        --member="serviceAccount:${CB_SA}" --role="roles/iam.serviceAccountUser"
+#      gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+#        --member="serviceAccount:${CB_SA}" --role="roles/secretmanager.secretAccessor"
+#      gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+#        --member="serviceAccount:${CB_SA}" --role="roles/artifactregistry.writer"
+#
+# 7. Grant Cloud Run service account access to GCS bucket and secrets:
+#      CR_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+#
+#      gsutil iam ch serviceAccount:${CR_SA}:roles/storage.objectAdmin \
+#        gs://YOUR_PROJECT_ID-rag-data
+#
+#      gcloud secrets add-iam-policy-binding MONGO_URI \
+#        --member="serviceAccount:${CR_SA}" --role="roles/secretmanager.secretAccessor"
+#      gcloud secrets add-iam-policy-binding GROQ_API_KEY \
+#        --member="serviceAccount:${CR_SA}" --role="roles/secretmanager.secretAccessor"
+#      gcloud secrets add-iam-policy-binding JWT_SECRET_KEY \
+#        --member="serviceAccount:${CR_SA}" --role="roles/secretmanager.secretAccessor"
+#
+# 8. Connect your GitHub repo to Cloud Build:
+#      Go to: https://console.cloud.google.com/cloud-build/triggers
+#      → Connect Repository → GitHub → select your repo
+#      → Create trigger: branch=main, config=cloudbuild.yaml
+#
+# ════════════════════════════════════════════════════════════════════════════
+
+substitutions:
+  _REGION: us-central1
+  _SERVICE: chat-backend-rag
+  _REPO: chat-backend
+  _BUCKET: YOUR_PROJECT_ID-rag-data   # ← update with your project ID
+
+steps:
+  # ── Step 1: Build Docker image ─────────────────────────────────────────────
+  - name: gcr.io/cloud-builders/docker
+    id: build
+    args:
+      - build
+      - --tag
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$SHORT_SHA
+      - --tag
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
+      - --cache-from
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
+      - .
+
+  # ── Step 2: Push both tags to Artifact Registry ────────────────────────────
+  - name: gcr.io/cloud-builders/docker
+    id: push
+    waitFor: [build]
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}
+
+  # ── Step 3: Inject image URL + bucket into service YAML and deploy ─────────
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: deploy
+    waitFor: [push]
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        sed \
+          -e "s|IMAGE_URL|${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$SHORT_SHA|g" \
+          -e "s|BUCKET_NAME|${_BUCKET}|g" \
+          cloud-run-service.yaml > /tmp/service.yaml
+
+        gcloud run services replace /tmp/service.yaml \
+          --region=${_REGION} \
+          --platform=managed
+
+        # Make the service publicly accessible
+        gcloud run services add-iam-policy-binding ${_SERVICE} \
+          --region=${_REGION} \
+          --member=allUsers \
+          --role=roles/run.invoker
+
+        # Print the live URL
+        echo "✅ Deployed to:"
+        gcloud run services describe ${_SERVICE} \
+          --region=${_REGION} \
+          --format="value(status.url)"
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$SHORT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
+
+# Allow up to 30 minutes (sentence-transformer layer is ~400MB to build)
+timeout: 1800s
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8

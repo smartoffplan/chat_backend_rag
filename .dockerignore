@@ -1,0 +1,34 @@
+# Version control
+.git
+.gitignore
+
+# Environment & secrets
+.env
+.env.*
+
+# Python cache
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Local data (mounted via GCS in production)
+uploads/
+chroma_db/
+
+# Backup files
+*.bak
+
+# Node (not needed)
+node_modules/
+package-lock.json
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

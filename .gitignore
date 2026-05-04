@@ -1,9 +1,22 @@
 /node_modules
 node_modules
 
+# Secrets
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 .env.example
+
+# Local data (not committed — persisted in GCS in production)
+uploads/
+chroma_db/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Backups
+*.bak
