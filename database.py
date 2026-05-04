@@ -4,12 +4,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MONGO_URI = os.getenv("MONGO_URI")
 DB_NAME = os.getenv("DB_NAME", "chatbot_db")
 
-client = AsyncIOMotorClient(MONGO_URI)
-db = client[DB_NAME]
+_client = None
+_db = None
+
+
+def _get_db():
+    global _client, _db
+    if _client is None:
+        _client = AsyncIOMotorClient(os.getenv("MONGO_URI"))
+        _db = _client[DB_NAME]
+    return _db
 
 
 async def get_db():
-    return db
+    return _get_db()
