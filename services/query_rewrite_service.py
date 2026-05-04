@@ -57,7 +57,7 @@ Rewritten query:"""
         rewritten = response.choices[0].message.content.strip()
 
         if rewritten and 5 < len(rewritten) < 200 and "\n" not in rewritten:
-            print(f"[QueryRewrite] '{original_query}' → '{rewritten}'")
+            print(f"[QueryRewrite] '{original_query}' -> '{rewritten}'")
             return rewritten
 
     except Exception as e:

@@ -91,14 +91,18 @@ async def send_message(
         if persona_doc:
             persona = persona_doc
     # Run RAG pipeline with strict chat_id + user_id isolation
-    result = await rag_service.answer_with_rag(
-        query=request.message,
-        chat_history=chat_history,
-        chat_id=request.session_id,
-        doc_ids=all_doc_ids if all_doc_ids else None,
-        user_id=user["user_id"],
-        persona=persona,
-    )
+    try:
+        result = await rag_service.answer_with_rag(
+            query=request.message,
+            chat_history=chat_history,
+            chat_id=request.session_id,
+            doc_ids=all_doc_ids if all_doc_ids else None,
+            user_id=user["user_id"],
+            persona=persona,
+        )
+    except Exception as e:
+        print(f"[chat/message] RAG pipeline error: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail=f"RAG pipeline error: {type(e).__name__}: {str(e)}")
 
     # Determine persona metadata for this message
     p_name = request.persona_name or (persona.get("persona_name") if persona else None)

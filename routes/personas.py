@@ -119,13 +119,15 @@ async def update_persona(
 # ── DELETE ──────────────────────────────────────────────────────────────────
 @router.delete("/{persona_id}")
 async def delete_persona(persona_id: str, db=Depends(get_db), user=Depends(get_current_user)):
-    result = await db["personas"].delete_one({"_id": persona_id, "user_id": user["user_id"]})
-    if result.deleted_count == 0:
+    # Fetch before deleting to check if it was the default
+    to_delete = await db["personas"].find_one({"_id": persona_id, "user_id": user["user_id"]})
+    if not to_delete:
         raise HTTPException(404, "Persona not found.")
 
+    await db["personas"].delete_one({"_id": persona_id, "user_id": user["user_id"]})
+
     # If the deleted persona was default, set the oldest remaining as default
-    was_default = await db["personas"].find_one({"_id": persona_id})
-    if was_default and was_default.get("is_default"):
+    if to_delete.get("is_default"):
         oldest = await db["personas"].find_one(
             {"user_id": user["user_id"]}, sort=[("created_at", 1)]
         )

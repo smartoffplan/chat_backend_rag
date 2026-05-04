@@ -33,23 +33,31 @@ class EmbeddingService:
 
         print("[EmbeddingService] Loading sentence-transformer model...")
         self.model = SentenceTransformer("all-MiniLM-L6-v2")
+        print("[EmbeddingService] Model loaded.")
 
-        print(f"[EmbeddingService] Connecting to ChromaDB at: {CHROMA_PATH}")
-        self.chroma_client = chromadb.PersistentClient(
-            path=CHROMA_PATH,
-            settings=Settings(anonymized_telemetry=False),
-        )
-        self.collection = self.chroma_client.get_or_create_collection(
-            name=COLLECTION_NAME,
-            metadata={"hnsw:space": "cosine"},
-        )
+        try:
+            print(f"[EmbeddingService] Connecting to ChromaDB at: {CHROMA_PATH}")
+            self.chroma_client = chromadb.PersistentClient(
+                path=CHROMA_PATH,
+                settings=Settings(anonymized_telemetry=False),
+            )
+            self.collection = self.chroma_client.get_or_create_collection(
+                name=COLLECTION_NAME,
+                metadata={"hnsw:space": "cosine"},
+            )
+            print("[EmbeddingService] ChromaDB ready.")
+        except Exception as e:
+            print(f"[EmbeddingService] WARNING: ChromaDB init failed: {type(e).__name__}: {e}. Queries will return no context.")
+            self.chroma_client = None
+            self.collection = None
+
         self._ready = True
         print("[EmbeddingService] Ready.")
 
     # ── STORE ────────────────────────────────────────────────────────────────
     def embed_chunks(self, chunks: list[dict], chat_id: str | None = None, user_id: str | None = None) -> None:
         self._ensure_ready()
-        if not chunks:
+        if not chunks or self.collection is None:
             return
 
         texts = [c["text"] for c in chunks]
@@ -82,6 +90,8 @@ class EmbeddingService:
         top_k: int = 5,
     ) -> list[dict]:
         self._ensure_ready()
+        if self.collection is None:
+            return []
         query_embedding = self.model.encode([query_text]).tolist()[0]
 
         conditions = []
@@ -99,12 +109,16 @@ class EmbeddingService:
         else:
             where_filter = None
 
-        results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-            where=where_filter,
-            include=["documents", "metadatas", "distances"],
-        )
+        try:
+            results = self.collection.query(
+                query_embeddings=[query_embedding],
+                n_results=top_k,
+                where=where_filter,
+                include=["documents", "metadatas", "distances"],
+            )
+        except Exception as e:
+            print(f"[EmbeddingService] ChromaDB query failed: {type(e).__name__}: {e}")
+            return []
 
         output = []
         if results["documents"] and results["documents"][0]:
@@ -126,15 +140,21 @@ class EmbeddingService:
     # ── DELETE ───────────────────────────────────────────────────────────────
     def delete_document(self, doc_id: str) -> None:
         self._ensure_ready()
+        if self.collection is None:
+            return
         self.collection.delete(where={"doc_id": doc_id})
         print(f"[EmbeddingService] Deleted chunks for doc {doc_id}")
 
     def delete_by_chat_id(self, chat_id: str) -> None:
         self._ensure_ready()
+        if self.collection is None:
+            return
         self.collection.delete(where={"chat_id": chat_id})
         print(f"[EmbeddingService] Deleted chunks for chat {chat_id}")
 
     # ── STATS ────────────────────────────────────────────────────────────────
     def collection_count(self) -> int:
         self._ensure_ready()
+        if self.collection is None:
+            return 0
         return self.collection.count()
